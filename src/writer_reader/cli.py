@@ -9,8 +9,9 @@ Commands:
     init        Initialize a new manuscript project
 """
 
-import click
 from pathlib import Path
+
+import click
 
 from . import __version__
 
@@ -54,7 +55,9 @@ def segment(book_dir: str, force: bool):
 
     result = segment_book(book_path, force=force)
 
-    click.echo(f"  Created {result['total_segments']} segments across {result['chapters']} chapters")
+    click.echo(
+        f"  Created {result['total_segments']} segments across {result['chapters']} chapters"
+    )
     click.echo(f"  Output: {result['segments_dir']}")
 
 
@@ -96,6 +99,39 @@ def init(book_dir: str, title: str, author: str):
     click.echo("  1. Add chapter files to chapters/")
     click.echo("  2. Run: writer-reader segment")
     click.echo("  3. Run: writer-reader serve")
+
+
+@main.command("update-toc")
+@click.argument("book_dir", type=click.Path(exists=True), default=".")
+@click.option(
+    "--preserve-structure/--no-preserve-structure",
+    "-p/-P",
+    default=True,
+    help="Preserve existing SUMMARY.md hierarchy (default: True)",
+)
+def update_toc(book_dir: str, preserve_structure: bool):
+    """Update SUMMARY.md table of contents."""
+    from .toc import update_summary
+
+    book_path = Path(book_dir)
+    click.echo(f"Updating SUMMARY.md in {book_path}...")
+
+    result = update_summary(book_path, preserve_structure=preserve_structure)
+
+    if preserve_structure:
+        click.echo("  Mode: preserving existing structure")
+    else:
+        click.echo("  Mode: generating flat structure")
+
+    click.echo(f"  Added: {len(result['added'])} new files")
+    click.echo(f"  Existing: {len(result['existing'])} files")
+    click.echo(f"  Output: {result['summary_path']}")
+
+    if result["added"]:
+        click.echo()
+        click.echo("New files added:")
+        for path in result["added"]:
+            click.echo(f"    - {path}")
 
 
 if __name__ == "__main__":

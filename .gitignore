@@ -81,3 +81,13 @@ logs/
 
 # Jupyter (if used)
 .ipynb_checkpoints/
+
+# MCP Ticketer
+.mcp-ticketer/
+
+# MCP configuration (contains tokens)
+.mcp.json
+
+# Gemini CLI
+.gemini/
+.venv/
