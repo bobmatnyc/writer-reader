@@ -1,0 +1,17 @@
+# The Augmented Programmer Book Reader Dependencies
+# Python 3.8+ required
+
+# CLI interface
+click>=8.0.0
+
+# Markdown processing
+markdown>=3.4.0
+
+# Rich terminal formatting and display
+rich>=13.0.0
+
+# Additional markdown extensions (optional but recommended)
+pymdown-extensions>=9.0.0
+
+# For better markdown rendering
+pygments>=2.14.0
