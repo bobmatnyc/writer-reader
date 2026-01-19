@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Tuple
 
 # Semantic version components
-VERSION: Tuple[int, int, int] = (3, 0, 0)
+VERSION: Tuple[int, int, int] = (3, 1, 0)
 
 # Build number - can be set manually or computed from git
 _BUILD_NUMBER: int = 0

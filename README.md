@@ -53,8 +53,11 @@ This installs the single `mdbook` command with all subcommands.
 ## Quick Start
 
 ```bash
-# Read a book
+# Read a book (pass book path as argument)
 mdbook read /path/to/book
+
+# Or use --book/-b global option
+mdbook --book /path/to/book read
 
 # Show book info
 mdbook info /path/to/book
@@ -68,8 +71,11 @@ mdbook new-chapter ./my-book -t "Introduction"
 # Regenerate table of contents
 mdbook toc ./my-book
 
-# Start MCP server
-mdbook serve-mcp
+# Start MCP server for a specific book
+mdbook serve-mcp /path/to/book
+
+# Auto-configure Claude Code MCP integration
+mdbook setup /path/to/book
 ```
 
 ## Command Reference
@@ -84,19 +90,21 @@ Commands:
   new-chapter  Add a new chapter to a book
   toc          Regenerate table of contents
   serve-mcp    Start MCP server for Claude Code
+  setup        Auto-configure Claude Code MCP integration
 
-Options:
-  --version    Show version and exit
-  --help       Show help message and exit
+Global Options:
+  -b, --book PATH  Book directory (used by all commands)
+  --version        Show version and exit
+  --help           Show help message and exit
 ```
 
 ### read
 
 ```bash
-mdbook read [PATH] [OPTIONS]
+mdbook read [BOOK] [OPTIONS]
 
 Arguments:
-  PATH         Book directory (default: current directory)
+  BOOK         Book directory (or use global --book option)
 
 Options:
   -c, --chapter NUM    Start at specific chapter
@@ -118,14 +126,27 @@ Options:
 ### new-chapter
 
 ```bash
-mdbook new-chapter [PATH] [OPTIONS]
+mdbook new-chapter [BOOK] [OPTIONS]
 
 Arguments:
-  PATH         Book directory (default: current directory)
+  BOOK         Book directory (or use global --book option)
 
 Options:
   -t, --title TEXT     Chapter title (required)
   -d, --draft          Mark as draft
+```
+
+### setup
+
+```bash
+mdbook setup [BOOK]
+
+Arguments:
+  BOOK         Book directory (or use global --book option)
+
+Auto-configures Claude Code MCP integration by updating .mcp.json
+in the project directory. Creates the file if it doesn't exist or
+adds/updates the mdbook server configuration.
 ```
 
 ## MCP Server Integration
@@ -192,6 +213,7 @@ MIT License
 
 ## Version History
 
+- **v3.1.0** - Multi-book support with BOOK argument and `--book/-b` global option, new `setup` command for Claude Code MCP auto-configuration
 - **v3.0.0** - Complete rewrite with DI/SOA architecture, unified `mdbook` CLI, MCP server integration
 - **v2.1.0** - Added md-book-writer tool
 - **v2.0.0** - Generic multi-format support, YAML frontmatter parsing
