@@ -1,7 +1,8 @@
 [project]
-name = "mdbook"
+name = "md-book"
 version = "3.1.0"
 description = "MD Book Tools - A DI/SOA markdown book reader and writer with MCP server support"
+authors = [{name = "Bob Matsuoka", email = "bob@matsuoka.dev"}]
 requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
@@ -32,14 +33,23 @@ dependencies = [
 
 [project.optional-dependencies]
 toml = ["tomli>=2.0.0;python_version<'3.11'"]
+dev = [
+    "pytest>=7.0.0",
+    "twine>=4.0.0",
+    "build>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/bobmatnyc/md-book"
+Repository = "https://github.com/bobmatnyc/md-book"
+Documentation = "https://github.com/bobmatnyc/md-book#readme"
 
 [project.scripts]
 mdbook = "mdbook.cli:main"
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["mdbook*"]
+[tool.hatch.build.targets.wheel]
+packages = ["mdbook"]
