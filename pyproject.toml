@@ -1,6 +1,6 @@
 [project]
 name = "mdbook"
-version = "3.0.0"
+version = "3.1.0"
 description = "MD Book Tools - A DI/SOA markdown book reader and writer with MCP server support"
 requires-python = ">=3.10"
 readme = "README.md"
