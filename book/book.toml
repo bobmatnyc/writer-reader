@@ -1,0 +1,7 @@
+[book]
+title = "Sample Book for Testing"
+author = "Test Author"
+language = "en"
+
+[build]
+build-dir = "build"

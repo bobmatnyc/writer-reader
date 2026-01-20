@@ -150,3 +150,10 @@ cython_debug/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude/AI tooling
+.claude/
+.claude-mpm/
+.gemini/
+.mcp-ticketer/
+.mcp.json
