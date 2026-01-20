@@ -19,9 +19,9 @@ from .services import IBookService
 
 # Get version from package metadata
 try:
-    __version__ = get_version("mdbook")
+    __version__ = get_version("md-book")
 except Exception:
-    __version__ = "3.0.0"  # Fallback version
+    __version__ = "0.0.0"  # Fallback version
 
 
 # Context keys
