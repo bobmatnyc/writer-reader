@@ -1,6 +1,6 @@
 [project]
 name = "md-book"
-version = "3.1.1"
+version = "1.0.2"
 description = "MD Book Tools - A DI/SOA markdown book reader and writer with MCP server support"
 authors = [{name = "Bob Matsuoka", email = "bob@matsuoka.dev"}]
 requires-python = ">=3.10"
