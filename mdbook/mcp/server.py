@@ -272,6 +272,107 @@ async def list_tools() -> list[Tool]:
                 "required": ["path", "chapter"],
             },
         ),
+        Tool(
+            name="build_book",
+            description="Render book to HTML with syntax highlighting, tables, mermaid diagrams.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": "Output directory for HTML files (default: book/html)",
+                    },
+                },
+                "required": ["path"],
+            },
+        ),
+        Tool(
+            name="generate_toc",
+            description="Generate hierarchical table of contents from all headings.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "include_sections": {
+                        "type": "boolean",
+                        "description": "Include intra-chapter headings (default: false)",
+                        "default": False,
+                    },
+                },
+                "required": ["path"],
+            },
+        ),
+        Tool(
+            name="generate_index",
+            description="Generate alphabetical index from {{index: term}} markers.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                },
+                "required": ["path"],
+            },
+        ),
+        Tool(
+            name="validate_images",
+            description="Check that all referenced images exist.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                },
+                "required": ["path"],
+            },
+        ),
+        Tool(
+            name="extract_images",
+            description="List all image references in a chapter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                },
+                "required": ["path", "chapter"],
+            },
+        ),
+        Tool(
+            name="extract_mermaid",
+            description="Extract mermaid diagram blocks from a chapter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                },
+                "required": ["path", "chapter"],
+            },
+        ),
     ]
 
 
@@ -313,6 +414,18 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             result = await handle_add_note(book_service, arguments)
         elif name == "list_notes":
             result = await handle_list_notes(book_service, arguments)
+        elif name == "build_book":
+            result = await handle_build_book(arguments)
+        elif name == "generate_toc":
+            result = await handle_generate_toc(arguments)
+        elif name == "generate_index":
+            result = await handle_generate_index(arguments)
+        elif name == "validate_images":
+            result = await handle_validate_images(arguments)
+        elif name == "extract_images":
+            result = await handle_extract_images(arguments)
+        elif name == "extract_mermaid":
+            result = await handle_extract_mermaid(arguments)
         else:
             result = {"error": f"Unknown tool: {name}"}
     except FileNotFoundError as e:
@@ -652,6 +765,226 @@ async def handle_list_notes(
     notes = book_service.list_notes(path, chapter)
 
     return {"notes": notes}
+
+
+async def handle_build_book(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle build_book tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path' and optional 'output_dir'.
+
+    Returns:
+        Dictionary with build status and generated files.
+    """
+    from ..services import RenderService
+
+    path = Path(arguments["path"]).resolve()
+    output_dir = arguments.get("output_dir")
+
+    if output_dir:
+        output_path = Path(output_dir).resolve()
+    else:
+        output_path = path / "html"
+
+    container = configure_services()
+    book_service = container.resolve(IBookService)
+    render_service = container.resolve(RenderService)
+
+    book = book_service.get_book_info(path)
+    generated = render_service.render_book(book, output_path)
+
+    return {
+        "success": True,
+        "output_dir": str(output_path),
+        "files_generated": len(generated),
+        "files": [str(f.name) for f in generated],
+    }
+
+
+async def handle_generate_toc(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle generate_toc tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path' and optional 'include_sections'.
+
+    Returns:
+        Dictionary with TOC markdown.
+    """
+    from ..services import TocService
+
+    path = Path(arguments["path"]).resolve()
+    include_sections = arguments.get("include_sections", False)
+
+    container = configure_services()
+    book_service = container.resolve(IBookService)
+    toc_service = container.resolve(TocService)
+
+    book = book_service.get_book_info(path)
+    toc_md = toc_service.generate_toc_markdown(
+        book, include_chapter_tocs=include_sections
+    )
+
+    return {
+        "success": True,
+        "toc": toc_md,
+    }
+
+
+async def handle_generate_index(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle generate_index tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path'.
+
+    Returns:
+        Dictionary with index markdown.
+    """
+    from ..services import IndexService
+
+    path = Path(arguments["path"]).resolve()
+
+    container = configure_services()
+    book_service = container.resolve(IBookService)
+    index_service = container.resolve(IndexService)
+
+    book = book_service.get_book_info(path)
+    index = index_service.build_index(book)
+
+    return {
+        "success": True,
+        "term_count": len(index.entries),
+        "index": index.to_markdown(),
+    }
+
+
+async def handle_validate_images(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle validate_images tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path'.
+
+    Returns:
+        Dictionary with validation results.
+    """
+    from ..services import ContentService, IReaderService
+
+    path = Path(arguments["path"]).resolve()
+
+    container = configure_services()
+    book_service = container.resolve(IBookService)
+    content_service = container.resolve(ContentService)
+    reader_service = container.resolve(IReaderService)
+
+    book = book_service.get_book_info(path)
+    missing_images = []
+
+    for chapter in book.chapters:
+        content = reader_service.get_chapter_content(chapter)
+        missing = content_service.validate_images(content, chapter.file_path)
+        for img in missing:
+            missing_images.append(
+                {
+                    "chapter": chapter.number,
+                    "chapter_title": chapter.title,
+                    "line": img.line_number,
+                    "path": img.path,
+                }
+            )
+
+    return {
+        "success": True,
+        "valid": len(missing_images) == 0,
+        "missing_count": len(missing_images),
+        "missing_images": missing_images,
+    }
+
+
+async def handle_extract_images(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle extract_images tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path' and 'chapter'.
+
+    Returns:
+        Dictionary with image list.
+    """
+    from ..services import ContentService, IReaderService
+
+    path = Path(arguments["path"]).resolve()
+    chapter_num = arguments["chapter"]
+
+    container = configure_services()
+    book_service = container.resolve(IBookService)
+    content_service = container.resolve(ContentService)
+    reader_service = container.resolve(IReaderService)
+
+    book = book_service.get_book_info(path)
+    chapter = book.get_chapter(chapter_num)
+
+    if chapter is None:
+        return {"error": f"Chapter {chapter_num} not found"}
+
+    content = reader_service.get_chapter_content(chapter)
+    images = content_service.extract_images(content, chapter.file_path)
+
+    return {
+        "chapter": chapter_num,
+        "chapter_title": chapter.title,
+        "image_count": len(images),
+        "images": [
+            {
+                "alt_text": img.alt_text,
+                "path": img.path,
+                "line": img.line_number,
+                "exists": img.exists,
+            }
+            for img in images
+        ],
+    }
+
+
+async def handle_extract_mermaid(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle extract_mermaid tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path' and 'chapter'.
+
+    Returns:
+        Dictionary with mermaid blocks.
+    """
+    from ..services import ContentService, IReaderService
+
+    path = Path(arguments["path"]).resolve()
+    chapter_num = arguments["chapter"]
+
+    container = configure_services()
+    book_service = container.resolve(IBookService)
+    content_service = container.resolve(ContentService)
+    reader_service = container.resolve(IReaderService)
+
+    book = book_service.get_book_info(path)
+    chapter = book.get_chapter(chapter_num)
+
+    if chapter is None:
+        return {"error": f"Chapter {chapter_num} not found"}
+
+    content = reader_service.get_chapter_content(chapter)
+    blocks = content_service.extract_mermaid_blocks(content)
+
+    return {
+        "chapter": chapter_num,
+        "chapter_title": chapter.title,
+        "has_mermaid": len(blocks) > 0,
+        "block_count": len(blocks),
+        "blocks": [
+            {
+                "content": block.content,
+                "start_line": block.start_line,
+                "end_line": block.end_line,
+            }
+            for block in blocks
+        ],
+    }
 
 
 async def run_server_async() -> None:

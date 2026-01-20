@@ -4,8 +4,11 @@ Provides a Click-based CLI for reading and writing markdown books.
 This is the single entry point for all command-line operations.
 """
 
+import http.server
 import json
 import shutil
+import socket
+import socketserver
 import sys
 from datetime import datetime
 from importlib.metadata import version as get_version
@@ -15,7 +18,6 @@ import click
 
 from .infrastructure import configure_services
 from .services import IBookService
-
 
 # Get version from package metadata
 try:
@@ -58,7 +60,8 @@ def resolve_book_path(ctx: click.Context, book_arg: str | None) -> Path:
 
 @click.group()
 @click.option(
-    "--book", "-b",
+    "--book",
+    "-b",
     type=click.Path(),
     help="Path to book directory (default: current directory).",
 )
@@ -83,7 +86,8 @@ def cli(ctx: click.Context, book: str | None) -> None:
 @cli.command()
 @click.argument("book", type=click.Path(exists=True), default=None, required=False)
 @click.option(
-    "--chapter", "-c",
+    "--chapter",
+    "-c",
     type=int,
     help="Start reading at specific chapter number.",
 )
@@ -206,12 +210,14 @@ def _show_toc(chapters: list) -> None:
 @cli.command()
 @click.argument("book", type=click.Path(), default=None, required=False)
 @click.option(
-    "--title", "-t",
+    "--title",
+    "-t",
     required=True,
     help="The book title.",
 )
 @click.option(
-    "--author", "-a",
+    "--author",
+    "-a",
     required=True,
     help="The book author.",
 )
@@ -247,12 +253,14 @@ def init(ctx: click.Context, book: str | None, title: str, author: str) -> None:
 @cli.command("new-chapter")
 @click.argument("book", type=click.Path(exists=True), default=None, required=False)
 @click.option(
-    "--title", "-t",
+    "--title",
+    "-t",
     required=True,
     help="The chapter title.",
 )
 @click.option(
-    "--draft", "-d",
+    "--draft",
+    "-d",
     is_flag=True,
     help="Mark chapter as draft.",
 )
@@ -355,6 +363,101 @@ def info(ctx: click.Context, book: str | None) -> None:
         click.echo(f"  {prefix}. {ch.title}{draft}")
 
 
+def _find_available_port(start_port: int = 3500, max_port: int = 3509) -> int | None:
+    """Find an available port in the specified range.
+
+    Args:
+        start_port: The first port to try.
+        max_port: The last port to try.
+
+    Returns:
+        An available port number, or None if no ports are available.
+    """
+    for port in range(start_port, max_port + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            result = sock.connect_ex(("localhost", port))
+            if result != 0:
+                # Port is available (connection failed)
+                return port
+    return None
+
+
+class _QuietHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+    """HTTP request handler that suppresses console output."""
+
+    def log_message(self, format: str, *args) -> None:
+        """Suppress log messages by default."""
+        pass
+
+
+@cli.command()
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.option(
+    "--port",
+    "-p",
+    type=int,
+    default=None,
+    help="Port to serve on (default: 3500, with fallback to 3501-3509 if busy).",
+)
+@click.pass_context
+def serve(ctx: click.Context, book: str | None, port: int | None) -> None:
+    """Serve the book locally via HTTP.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+
+    Starts a local HTTP server to preview the book. By default uses port 3500,
+    with automatic fallback to ports 3501-3509 if the port is in use.
+
+    Press Ctrl+C to stop the server.
+    """
+    book_path = resolve_book_path(ctx, book)
+
+    # Verify the book exists
+    if not book_path.exists():
+        click.echo(f"Error: Book directory not found: {book_path}", err=True)
+        sys.exit(1)
+
+    # Determine port to use
+    if port is not None:
+        # User specified a port, use it directly
+        actual_port = port
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            if sock.connect_ex(("localhost", actual_port)) == 0:
+                click.echo(f"Error: Port {actual_port} is already in use.", err=True)
+                sys.exit(1)
+    else:
+        # Find an available port in the default range
+        actual_port = _find_available_port(3500, 3509)
+        if actual_port is None:
+            click.echo(
+                "Error: All ports in range 3500-3509 are in use. "
+                "Specify a different port with --port.",
+                err=True,
+            )
+            sys.exit(1)
+
+    # Create a handler that serves from the book directory
+    class BookHTTPHandler(_QuietHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(book_path), **kwargs)
+
+    # Start the server
+    click.echo(f"Serving book at http://localhost:{actual_port}")
+    click.echo(f"Book directory: {book_path}")
+    click.echo("Press Ctrl+C to stop the server.")
+
+    try:
+        with socketserver.TCPServer(("", actual_port), BookHTTPHandler) as httpd:
+            httpd.serve_forever()
+    except KeyboardInterrupt:
+        click.echo("\nServer stopped.")
+    except OSError as e:
+        click.echo(f"Error starting server: {e}", err=True)
+        sys.exit(1)
+
+
 @cli.command("serve-mcp")
 def serve_mcp() -> None:
     """Start MCP server for Claude Code.
@@ -371,6 +474,7 @@ def serve_mcp() -> None:
     - update_toc: Regenerate the table of contents
     """
     from .mcp import run_server
+
     run_server()
 
 
@@ -395,7 +499,7 @@ def _build_mcp_config() -> dict:
     return {
         "mdbook": {
             "command": "uv",
-            "args": ["run", "--directory", str(install_path), "mdbook", "serve-mcp"]
+            "args": ["run", "--directory", str(install_path), "mdbook", "serve-mcp"],
         }
     }
 
@@ -458,13 +562,15 @@ def _save_mcp_config(config_path: Path, config: dict) -> None:
 
 @cli.command()
 @click.option(
-    "--global", "-g",
+    "--global",
+    "-g",
     "global_config",
     is_flag=True,
     help="Install to global ~/.claude/mcp.json",
 )
 @click.option(
-    "--project", "-p",
+    "--project",
+    "-p",
     "project_path",
     type=click.Path(),
     help="Install to project .mcp.json",
@@ -523,13 +629,231 @@ def setup(ctx: click.Context, global_config: bool, project_path: str | None) -> 
     _save_mcp_config(config_path, config)
 
     # Display success message
-    click.echo(f"\nSuccessfully configured mdbook MCP server!")
+    click.echo("\nSuccessfully configured mdbook MCP server!")
     click.echo(f"  Location: {config_path} ({location_type})")
-    click.echo(f"\nAdded configuration:")
+    click.echo("\nAdded configuration:")
     click.echo(json.dumps(mdbook_config, indent=2))
 
     click.echo("\nClaude Code will now have access to mdbook tools.")
     click.echo("Restart Claude Code to load the new configuration.")
+
+
+@cli.command()
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    help="Output directory for HTML files (default: book/html).",
+)
+@click.pass_context
+def build(ctx: click.Context, book: str | None, output: str | None) -> None:
+    """Build book to HTML with all features.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+
+    Renders all chapters to HTML with:
+    - Syntax highlighting
+    - Tables and footnotes
+    - Task lists
+    - Mermaid diagrams (client-side rendering)
+    - Navigation between chapters
+    """
+    from .services import RenderService
+
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    book_service = get_book_service(ctx)
+    book_path = resolve_book_path(ctx, book)
+
+    try:
+        book_info = book_service.get_book_info(book_path)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    # Determine output directory
+    if output:
+        output_dir = Path(output).resolve()
+    else:
+        output_dir = book_path / "html"
+
+    # Get render service
+    render_service = container.resolve(RenderService)
+
+    click.echo(f"Building book: {book_info.metadata.title}")
+    click.echo(f"Output directory: {output_dir}")
+
+    try:
+        generated = render_service.render_book(book_info, output_dir)
+        click.echo(f"\nGenerated {len(generated)} HTML files:")
+        for path in generated:
+            click.echo(f"  {path.name}")
+        click.echo(f"\nOpen {output_dir / 'index.html'} to view the book.")
+    except PermissionError as e:
+        click.echo(f"Error: Permission denied - {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command("toc-gen")
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    help="Output file for TOC (default: stdout).",
+)
+@click.option(
+    "--full",
+    "-f",
+    is_flag=True,
+    help="Include intra-chapter headings in TOC.",
+)
+@click.pass_context
+def toc_gen(
+    ctx: click.Context, book: str | None, output: str | None, full: bool
+) -> None:
+    """Generate hierarchical table of contents.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+
+    Extracts all headings (##, ###, ####) from chapters and generates
+    a hierarchical markdown TOC.
+    """
+    from .services import TocService
+
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    book_service = get_book_service(ctx)
+    book_path = resolve_book_path(ctx, book)
+
+    try:
+        book_info = book_service.get_book_info(book_path)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    # Get TOC service
+    toc_service = container.resolve(TocService)
+
+    toc_md = toc_service.generate_toc_markdown(book_info, include_chapter_tocs=full)
+
+    if output:
+        output_path = Path(output).resolve()
+        output_path.write_text(toc_md)
+        click.echo(f"TOC written to {output_path}")
+    else:
+        click.echo(toc_md)
+
+
+@cli.command("index-gen")
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    help="Output file for index (default: stdout).",
+)
+@click.pass_context
+def index_gen(ctx: click.Context, book: str | None, output: str | None) -> None:
+    """Generate alphabetical index from markers.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+
+    Extracts terms marked with {{index: term}} and generates
+    an alphabetically sorted index with chapter/section references.
+    """
+    from .services import IndexService
+
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    book_service = get_book_service(ctx)
+    book_path = resolve_book_path(ctx, book)
+
+    try:
+        book_info = book_service.get_book_info(book_path)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    # Get index service
+    index_service = container.resolve(IndexService)
+
+    index_md = index_service.generate_index_markdown(book_info)
+
+    if output:
+        output_path = Path(output).resolve()
+        output_path.write_text(index_md)
+        click.echo(f"Index written to {output_path}")
+    else:
+        click.echo(index_md)
+
+
+@cli.command("validate-images")
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.pass_context
+def validate_images(ctx: click.Context, book: str | None) -> None:
+    """Validate that all referenced images exist.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+
+    Checks all ![alt](path) image references and reports any missing files.
+    """
+    from .services import ContentService
+
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    book_service = get_book_service(ctx)
+    book_path = resolve_book_path(ctx, book)
+
+    try:
+        book_info = book_service.get_book_info(book_path)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    # Get services
+    content_service = container.resolve(ContentService)
+    from .services import IReaderService
+
+    reader_service = container.resolve(IReaderService)
+
+    missing_count = 0
+    for chapter in book_info.chapters:
+        content = reader_service.get_chapter_content(chapter)
+        missing = content_service.validate_images(content, chapter.file_path)
+
+        if missing:
+            click.echo(f"\nChapter {chapter.number or 'Intro'}: {chapter.title}")
+            for img in missing:
+                click.echo(f"  Line {img.line_number}: {img.path}")
+                missing_count += 1
+
+    if missing_count == 0:
+        click.echo("All image references are valid.")
+    else:
+        click.echo(f"\nFound {missing_count} missing image(s).")
+        sys.exit(1)
 
 
 def main() -> None:

@@ -21,9 +21,13 @@ from ..services import (
     ReaderService,
     WriterService,
     BookService,
+    ContentService,
+    RenderService,
+    TocService,
+    IndexService,
 )
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class ServiceContainer:
@@ -126,6 +130,39 @@ def configure_services() -> ServiceContainer:
         lambda: BookService(
             container.resolve(IReaderService),
             container.resolve(IWriterService),
+        ),
+    )
+
+    # Register content service
+    container.register(
+        ContentService,
+        lambda: ContentService(
+            container.resolve(IFileRepository),
+        ),
+    )
+
+    # Register render service
+    container.register(
+        RenderService,
+        lambda: RenderService(
+            container.resolve(IFileRepository),
+            container.resolve(IReaderService),
+        ),
+    )
+
+    # Register TOC service
+    container.register(
+        TocService,
+        lambda: TocService(
+            container.resolve(IReaderService),
+        ),
+    )
+
+    # Register index service
+    container.register(
+        IndexService,
+        lambda: IndexService(
+            container.resolve(IReaderService),
         ),
     )
 

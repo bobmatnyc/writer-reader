@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import date
 
+
 @dataclass
 class ChapterMetadata:
     title: str
@@ -11,6 +12,7 @@ class ChapterMetadata:
     date: Optional[date] = None
     draft: bool = False
     extra: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class Chapter:

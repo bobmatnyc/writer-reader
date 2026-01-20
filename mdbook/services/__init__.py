@@ -14,6 +14,10 @@ from .book_service import BookService
 from .reader_service import ReaderService
 from .structure_service import StructureService
 from .writer_service import WriterService
+from .content_service import ContentService
+from .render_service import RenderService
+from .toc_service import TocService
+from .index_service import IndexService
 
 __all__ = [
     "IStructureService",
@@ -24,4 +28,8 @@ __all__ = [
     "ReaderService",
     "StructureService",
     "WriterService",
+    "ContentService",
+    "RenderService",
+    "TocService",
+    "IndexService",
 ]

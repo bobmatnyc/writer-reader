@@ -25,24 +25,28 @@ class StructureService:
     """
 
     # Files that indicate an introduction/preface chapter
-    INTRO_FILES = frozenset({
-        "readme.md",
-        "index.md",
-        "introduction.md",
-        "preface.md",
-        "foreword.md",
-    })
+    INTRO_FILES = frozenset(
+        {
+            "readme.md",
+            "index.md",
+            "introduction.md",
+            "preface.md",
+            "foreword.md",
+        }
+    )
 
     # Files to skip during auto-detection
-    SKIP_FILES = frozenset({
-        "SUMMARY.md",
-        "Book.txt",
-        "_bookdown.yml",
-        "book.toml",
-        "CHANGELOG.md",
-        "CONTRIBUTING.md",
-        "LICENSE.md",
-    })
+    SKIP_FILES = frozenset(
+        {
+            "SUMMARY.md",
+            "Book.txt",
+            "_bookdown.yml",
+            "book.toml",
+            "CHANGELOG.md",
+            "CONTRIBUTING.md",
+            "LICENSE.md",
+        }
+    )
 
     # Patterns for chapter file naming
     CHAPTER_FILE_PATTERNS = (
@@ -607,11 +611,7 @@ class StructureService:
 
         # Check for chapter directories (chapter-01, etc.)
         chapter_dirs = sorted(
-            [
-                d
-                for d in self._file_repo.list_files(root, "chapter-*")
-                if d.is_dir()
-            ],
+            [d for d in self._file_repo.list_files(root, "chapter-*") if d.is_dir()],
             key=lambda p: p.name,
         )
 

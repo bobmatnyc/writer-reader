@@ -4,6 +4,7 @@ from typing import List, Optional
 from datetime import date
 from .chapter import Chapter
 
+
 @dataclass
 class BookMetadata:
     title: str
@@ -11,6 +12,7 @@ class BookMetadata:
     description: Optional[str] = None
     language: str = "en"
     created: Optional[date] = None
+
 
 @dataclass
 class Book:
