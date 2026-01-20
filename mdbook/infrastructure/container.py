@@ -25,6 +25,7 @@ from ..services import (
     RenderService,
     TocService,
     IndexService,
+    GitService,
 )
 
 T = TypeVar("T")
@@ -164,6 +165,12 @@ def configure_services() -> ServiceContainer:
         lambda: IndexService(
             container.resolve(IReaderService),
         ),
+    )
+
+    # Register git service
+    container.register(
+        GitService,
+        lambda: GitService(),
     )
 
     return container

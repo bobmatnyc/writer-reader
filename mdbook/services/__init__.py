@@ -18,6 +18,7 @@ from .content_service import ContentService
 from .render_service import RenderService
 from .toc_service import TocService
 from .index_service import IndexService
+from .git_service import GitService
 
 __all__ = [
     "IStructureService",
@@ -32,4 +33,5 @@ __all__ = [
     "RenderService",
     "TocService",
     "IndexService",
+    "GitService",
 ]

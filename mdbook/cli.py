@@ -804,6 +804,400 @@ def index_gen(ctx: click.Context, book: str | None, output: str | None) -> None:
         click.echo(index_md)
 
 
+@cli.command()
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.argument("chapter", type=int)
+@click.option(
+    "--section",
+    "-s",
+    type=str,
+    help="Section to edit (heading text or 0-based index).",
+)
+@click.option(
+    "--content",
+    "-c",
+    type=str,
+    help="New content (if not provided, reads from stdin).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show diff without making changes.",
+)
+@click.option(
+    "--no-backup",
+    is_flag=True,
+    help="Skip creating a backup file.",
+)
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    help="Open chapter in $EDITOR for editing.",
+)
+@click.pass_context
+def edit(
+    ctx: click.Context,
+    book: str | None,
+    chapter: int,
+    section: str | None,
+    content: str | None,
+    dry_run: bool,
+    no_backup: bool,
+    interactive: bool,
+) -> None:
+    """Edit chapter or section content.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+    CHAPTER is the chapter number to edit.
+
+    Examples:
+        mdbook edit book/ 1 --section "Getting Started" --content "New text"
+        mdbook edit book/ 1 --content "Full chapter content"
+        mdbook edit book/ 1 --interactive
+        echo "New content" | mdbook edit book/ 1 --section "Intro"
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    book_service = get_book_service(ctx)
+    book_path = resolve_book_path(ctx, book)
+
+    # Get container for writer service
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    from .services import IReaderService, IWriterService
+
+    writer_service = container.resolve(IWriterService)
+    reader_service = container.resolve(IReaderService)
+
+    try:
+        # Handle interactive mode
+        if interactive:
+            # Read current chapter content
+            book_info = book_service.get_book_info(book_path)
+            chapter_obj = book_info.get_chapter(chapter)
+            if chapter_obj is None:
+                click.echo(f"Error: Chapter {chapter} not found.", err=True)
+                sys.exit(1)
+
+            current_content = book_service.read_chapter(book_path, chapter)
+
+            # Write to temp file
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".md", delete=False
+            ) as tmp:
+                tmp.write(current_content)
+                tmp_path = tmp.name
+
+            # Open in editor
+            editor = os.environ.get("EDITOR", "vim")
+            result = subprocess.run([editor, tmp_path])
+
+            if result.returncode != 0:
+                click.echo("Editor exited with error. No changes made.", err=True)
+                os.unlink(tmp_path)
+                sys.exit(1)
+
+            # Read edited content
+            with open(tmp_path, "r") as f:
+                content = f.read()
+            os.unlink(tmp_path)
+
+            # Update chapter
+            edit_result = writer_service.update_chapter_content(
+                book_path,
+                chapter,
+                content,
+                reader_service,
+                dry_run=dry_run,
+                create_backup=not no_backup,
+            )
+
+            if edit_result.success:
+                click.echo(edit_result.message)
+                if edit_result.backup_path:
+                    click.echo(f"  Backup: {edit_result.backup_path}")
+            else:
+                click.echo(f"Error: {edit_result.message}", err=True)
+                sys.exit(1)
+            return
+
+        # Get content from option or stdin
+        if content is None:
+            if not sys.stdin.isatty():
+                content = sys.stdin.read()
+            else:
+                click.echo(
+                    "Error: --content required or pipe content via stdin", err=True
+                )
+                sys.exit(1)
+
+        # Edit section or full chapter
+        if section is not None:
+            # Parse section identifier
+            try:
+                section_id: str | int = int(section)
+            except ValueError:
+                section_id = section
+
+            edit_result = writer_service.replace_section(
+                book_path,
+                chapter,
+                section_id,
+                content,
+                reader_service,
+                preserve_heading=True,
+                dry_run=dry_run,
+                create_backup=not no_backup,
+            )
+        else:
+            edit_result = writer_service.update_chapter_content(
+                book_path,
+                chapter,
+                content,
+                reader_service,
+                dry_run=dry_run,
+                create_backup=not no_backup,
+            )
+
+        if dry_run and edit_result.diff:
+            click.echo("Diff preview:")
+            click.echo(edit_result.diff)
+        elif edit_result.success:
+            click.echo(edit_result.message)
+            if edit_result.backup_path:
+                click.echo(f"  Backup: {edit_result.backup_path}")
+        else:
+            click.echo(f"Error: {edit_result.message}", err=True)
+            sys.exit(1)
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except KeyError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.argument("chapter", type=int)
+@click.option(
+    "--content",
+    "-c",
+    type=str,
+    help="Content to append (if not provided, reads from stdin).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show diff without making changes.",
+)
+@click.option(
+    "--no-backup",
+    is_flag=True,
+    help="Skip creating a backup file.",
+)
+@click.pass_context
+def append(
+    ctx: click.Context,
+    book: str | None,
+    chapter: int,
+    content: str | None,
+    dry_run: bool,
+    no_backup: bool,
+) -> None:
+    """Append content to the end of a chapter.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+    CHAPTER is the chapter number to append to.
+
+    Examples:
+        mdbook append book/ 1 --content "Additional content here"
+        echo "New section content" | mdbook append book/ 1
+    """
+    # Get container for writer service
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    from .services import IReaderService, IWriterService
+
+    writer_service = container.resolve(IWriterService)
+    reader_service = container.resolve(IReaderService)
+    book_path = resolve_book_path(ctx, book)
+
+    try:
+        # Get content from option or stdin
+        if content is None:
+            if not sys.stdin.isatty():
+                content = sys.stdin.read()
+            else:
+                click.echo(
+                    "Error: --content required or pipe content via stdin", err=True
+                )
+                sys.exit(1)
+
+        edit_result = writer_service.append_to_chapter(
+            book_path,
+            chapter,
+            content,
+            reader_service,
+            dry_run=dry_run,
+            create_backup=not no_backup,
+        )
+
+        if dry_run and edit_result.diff:
+            click.echo("Diff preview:")
+            click.echo(edit_result.diff)
+        elif edit_result.success:
+            click.echo(edit_result.message)
+            if edit_result.backup_path:
+                click.echo(f"  Backup: {edit_result.backup_path}")
+        else:
+            click.echo(f"Error: {edit_result.message}", err=True)
+            sys.exit(1)
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except KeyError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.argument("chapter", type=int)
+@click.option(
+    "--after",
+    type=str,
+    help="Section to insert after (heading text or index).",
+)
+@click.option(
+    "--before",
+    type=str,
+    help="Section to insert before (heading text or index).",
+)
+@click.option(
+    "--content",
+    "-c",
+    type=str,
+    help="Content to insert (if not provided, reads from stdin).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show diff without making changes.",
+)
+@click.option(
+    "--no-backup",
+    is_flag=True,
+    help="Skip creating a backup file.",
+)
+@click.pass_context
+def insert(
+    ctx: click.Context,
+    book: str | None,
+    chapter: int,
+    after: str | None,
+    before: str | None,
+    content: str | None,
+    dry_run: bool,
+    no_backup: bool,
+) -> None:
+    """Insert content before or after a section.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+    CHAPTER is the chapter number.
+
+    Examples:
+        mdbook insert book/ 1 --after "Getting Started" --content "## New Section\\n\\nContent"
+        mdbook insert book/ 1 --before "Conclusion" --content "## Summary\\n\\nSummary here"
+    """
+    # Get container for writer service
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    from .services import IReaderService, IWriterService
+
+    writer_service = container.resolve(IWriterService)
+    reader_service = container.resolve(IReaderService)
+    book_path = resolve_book_path(ctx, book)
+
+    try:
+        # Validate options
+        if after is None and before is None:
+            click.echo("Error: --after or --before required", err=True)
+            sys.exit(1)
+        if after is not None and before is not None:
+            click.echo("Error: use only --after or --before, not both", err=True)
+            sys.exit(1)
+
+        # Get content from option or stdin
+        if content is None:
+            if not sys.stdin.isatty():
+                content = sys.stdin.read()
+            else:
+                click.echo(
+                    "Error: --content required or pipe content via stdin", err=True
+                )
+                sys.exit(1)
+
+        # Determine section and position
+        section_id_str = after if after is not None else before
+        position = "after" if after is not None else "before"
+
+        # Parse section identifier
+        try:
+            section_id: str | int = int(section_id_str)
+        except ValueError:
+            section_id = section_id_str
+
+        edit_result = writer_service.insert_at_section(
+            book_path,
+            chapter,
+            section_id,
+            content,
+            reader_service,
+            position=position,
+            dry_run=dry_run,
+            create_backup=not no_backup,
+        )
+
+        if dry_run and edit_result.diff:
+            click.echo("Diff preview:")
+            click.echo(edit_result.diff)
+        elif edit_result.success:
+            click.echo(edit_result.message)
+            if edit_result.backup_path:
+                click.echo(f"  Backup: {edit_result.backup_path}")
+        else:
+            click.echo(f"Error: {edit_result.message}", err=True)
+            sys.exit(1)
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except KeyError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 @cli.command("validate-images")
 @click.argument("book", type=click.Path(exists=True), default=None, required=False)
 @click.pass_context
@@ -853,6 +1247,210 @@ def validate_images(ctx: click.Context, book: str | None) -> None:
         click.echo("All image references are valid.")
     else:
         click.echo(f"\nFound {missing_count} missing image(s).")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.option(
+    "--chapter",
+    "-c",
+    type=int,
+    help="Chapter number to show history for (if omitted, shows recent changes for book).",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=20,
+    help="Maximum number of commits to show (default: 20).",
+)
+@click.pass_context
+def history(
+    ctx: click.Context, book: str | None, chapter: int | None, limit: int
+) -> None:
+    """Show git commit history for a chapter or book.
+
+    BOOK is the root directory of the book (default: current directory or global --book).
+
+    Examples:
+        mdbook history book/           # Recent changes across book
+        mdbook history book/ -c 1      # History for chapter 1
+        mdbook history book/ -c 0      # History for intro chapter
+        mdbook history book/ -n 50     # Show up to 50 commits
+    """
+    from .services import GitService
+
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    book_service = get_book_service(ctx)
+    git_service = container.resolve(GitService)
+    book_path = resolve_book_path(ctx, book)
+
+    # Check if this is a git repo
+    if not git_service.is_git_repo(book_path):
+        click.echo(f"Error: {book_path} is not in a git repository.", err=True)
+        sys.exit(1)
+
+    if chapter is not None:
+        # Show history for specific chapter
+        try:
+            book_info = book_service.get_book_info(book_path)
+            ch = book_info.get_chapter(chapter)
+            if ch is None:
+                click.echo(f"Error: Chapter {chapter} not found.", err=True)
+                sys.exit(1)
+
+            history_data = git_service.get_chapter_history(ch.file_path, limit)
+
+            click.echo(f"\nHistory for Chapter {chapter}: {ch.title}")
+            click.echo(f"File: {ch.file_path}")
+            click.echo("=" * 60)
+
+            if not history_data.commits:
+                click.echo("No commits found for this chapter.")
+            else:
+                for commit in history_data.commits:
+                    click.echo(
+                        f"\n{commit.short_hash} - {commit.date.strftime('%Y-%m-%d %H:%M')}"
+                    )
+                    click.echo(f"  Author: {commit.author} <{commit.author_email}>")
+                    click.echo(f"  {commit.subject}")
+
+        except FileNotFoundError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+    else:
+        # Show recent changes across book
+        try:
+            changes = git_service.get_recent_changes(book_path, limit)
+
+            click.echo(f"\nRecent changes in {book_path}")
+            click.echo("=" * 60)
+
+            if not changes:
+                click.echo("No recent changes found.")
+            else:
+                for change in changes:
+                    click.echo(
+                        f"\n{change.commit.short_hash} - "
+                        f"{change.commit.date.strftime('%Y-%m-%d %H:%M')}"
+                    )
+                    click.echo(f"  [{change.change_type}] {change.file_path}")
+                    click.echo(f"  {change.commit.subject}")
+
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+
+
+@cli.command("diff")
+@click.argument("book", type=click.Path(exists=True), default=None, required=False)
+@click.argument("chapter", type=int)
+@click.option(
+    "--from",
+    "commit_from",
+    default="HEAD~1",
+    help="Starting commit (older version). Default: HEAD~1.",
+)
+@click.option(
+    "--to",
+    "commit_to",
+    default="HEAD",
+    help="Ending commit (newer version). Default: HEAD.",
+)
+@click.option(
+    "--raw",
+    is_flag=True,
+    help="Show raw diff output instead of formatted.",
+)
+@click.pass_context
+def diff_cmd(
+    ctx: click.Context,
+    book: str | None,
+    chapter: int,
+    commit_from: str,
+    commit_to: str,
+    raw: bool,
+) -> None:
+    """Show diff between versions of a chapter.
+
+    BOOK is the root directory of the book.
+    CHAPTER is the chapter number to diff.
+
+    Examples:
+        mdbook diff book/ 1                      # Diff chapter 1: HEAD~1 to HEAD
+        mdbook diff book/ 1 --from=HEAD~3        # Diff last 3 commits
+        mdbook diff book/ 1 --from=abc123 --to=def456  # Between specific commits
+        mdbook diff book/ 1 --raw                # Show raw git diff output
+    """
+    from .services import GitService
+
+    container = ctx.obj.get("_container")
+    if container is None:
+        from .infrastructure import configure_services
+
+        container = configure_services()
+        ctx.obj["_container"] = container
+
+    book_service = get_book_service(ctx)
+    git_service = container.resolve(GitService)
+    book_path = resolve_book_path(ctx, book)
+
+    # Check if this is a git repo
+    if not git_service.is_git_repo(book_path):
+        click.echo(f"Error: {book_path} is not in a git repository.", err=True)
+        sys.exit(1)
+
+    try:
+        book_info = book_service.get_book_info(book_path)
+        ch = book_info.get_chapter(chapter)
+        if ch is None:
+            click.echo(f"Error: Chapter {chapter} not found.", err=True)
+            sys.exit(1)
+
+        diff_data = git_service.get_chapter_diff(ch.file_path, commit_from, commit_to)
+
+        click.echo(f"\nDiff for Chapter {chapter}: {ch.title}")
+        click.echo(f"From: {commit_from} -> To: {commit_to}")
+        click.echo("=" * 60)
+
+        if not diff_data.has_changes:
+            click.echo("No changes between these commits.")
+        elif raw:
+            click.echo(diff_data.raw_diff)
+        else:
+            click.echo(
+                f"  +{diff_data.additions} additions, -{diff_data.deletions} deletions"
+            )
+            click.echo()
+
+            for hunk in diff_data.hunks:
+                click.echo(
+                    f"@@ -{hunk.old_start},{hunk.old_count} "
+                    f"+{hunk.new_start},{hunk.new_count} @@"
+                )
+                for line in hunk.content.split("\n"):
+                    if line.startswith("+"):
+                        click.secho(line, fg="green")
+                    elif line.startswith("-"):
+                        click.secho(line, fg="red")
+                    else:
+                        click.echo(line)
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 

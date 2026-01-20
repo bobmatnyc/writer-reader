@@ -13,6 +13,11 @@ from .content import (
     IndexTerm,
     IndexEntry,
     BookIndex,
+    CommitInfo,
+    DiffHunk,
+    FileDiff,
+    ChapterHistory,
+    RecentChange,
 )
 
 __all__ = [
@@ -31,4 +36,9 @@ __all__ = [
     "IndexTerm",
     "IndexEntry",
     "BookIndex",
+    "CommitInfo",
+    "DiffHunk",
+    "FileDiff",
+    "ChapterHistory",
+    "RecentChange",
 ]

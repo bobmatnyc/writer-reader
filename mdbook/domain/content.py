@@ -1,9 +1,11 @@
 """Domain models for content features.
 
-Provides dataclasses for TOC entries, index terms, and image references.
+Provides dataclasses for TOC entries, index terms, image references,
+and git version control information.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 
@@ -127,6 +129,85 @@ class BookIndex:
             lines.append(f"- **{entry.term}**: {locations}")
 
         return "\n".join(lines)
+
+
+@dataclass
+class CommitInfo:
+    """Information about a git commit.
+
+    Represents metadata from a single commit affecting a file.
+    """
+
+    hash: str  # Full SHA-1 hash
+    short_hash: str  # Abbreviated hash (7 chars)
+    author: str
+    author_email: str
+    date: datetime
+    message: str
+    subject: str  # First line of commit message
+
+
+@dataclass
+class DiffHunk:
+    """A single hunk from a diff.
+
+    Represents a contiguous block of changes.
+    """
+
+    old_start: int  # Starting line in old version
+    old_count: int  # Number of lines in old version
+    new_start: int  # Starting line in new version
+    new_count: int  # Number of lines in new version
+    content: str  # The actual diff content with +/- prefixes
+
+
+@dataclass
+class FileDiff:
+    """Diff information between two versions of a file.
+
+    Contains parsed diff output with statistics and hunks.
+    """
+
+    file_path: str
+    commit_from: str  # Commit hash or ref for old version
+    commit_to: str  # Commit hash or ref for new version
+    additions: int  # Lines added
+    deletions: int  # Lines removed
+    hunks: list[DiffHunk] = field(default_factory=list)
+    raw_diff: str = ""  # Full raw diff output
+
+    @property
+    def has_changes(self) -> bool:
+        """Check if there are any changes."""
+        return self.additions > 0 or self.deletions > 0
+
+
+@dataclass
+class ChapterHistory:
+    """Git history for a chapter file.
+
+    Contains list of commits that affected the chapter.
+    """
+
+    chapter_path: str
+    commits: list[CommitInfo] = field(default_factory=list)
+
+    @property
+    def commit_count(self) -> int:
+        """Number of commits in history."""
+        return len(self.commits)
+
+
+@dataclass
+class RecentChange:
+    """A recent change in the book repository.
+
+    Combines commit info with the affected file path.
+    """
+
+    file_path: str
+    commit: CommitInfo
+    change_type: str = "modified"  # added, modified, deleted
 
 
 def _slugify(text: str) -> str:

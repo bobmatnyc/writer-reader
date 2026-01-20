@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="200" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">MD-Book Architecture</text>
+
+  <!-- CLI Layer -->
+  <rect x="50" y="50" width="300" height="40" rx="5" fill="#4A90D9" stroke="#2E6BA6" stroke-width="2"/>
+  <text x="200" y="75" text-anchor="middle" font-family="Arial" font-size="12" fill="white">CLI Interface</text>
+
+  <!-- Arrow -->
+  <line x1="200" y1="90" x2="200" y2="110" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Service Layer -->
+  <rect x="50" y="115" width="300" height="40" rx="5" fill="#7B68EE" stroke="#5B48CE" stroke-width="2"/>
+  <text x="200" y="140" text-anchor="middle" font-family="Arial" font-size="12" fill="white">Services (Structure, Content, Notes)</text>
+
+  <!-- Arrow -->
+  <line x1="200" y1="155" x2="200" y2="175" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Domain Layer -->
+  <rect x="50" y="180" width="300" height="40" rx="5" fill="#50C878" stroke="#30A858" stroke-width="2"/>
+  <text x="200" y="205" text-anchor="middle" font-family="Arial" font-size="12" fill="white">Domain (Book, Chapter, Section)</text>
+
+  <!-- Arrow -->
+  <line x1="200" y1="220" x2="200" y2="240" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Infrastructure Layer -->
+  <rect x="50" y="245" width="300" height="40" rx="5" fill="#FF7F50" stroke="#DF5F30" stroke-width="2"/>
+  <text x="200" y="270" text-anchor="middle" font-family="Arial" font-size="12" fill="white">Infrastructure (File System, MCP Server)</text>
+</svg>

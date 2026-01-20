@@ -1,12 +1,14 @@
 """Writer service implementation.
 
-Provides functionality to initialize books, add chapters, and update
-the table of contents using constructor injection for dependencies.
+Provides functionality to initialize books, add chapters, edit chapter content,
+and update the table of contents using constructor injection for dependencies.
 """
 
 from __future__ import annotations
 
+import difflib
 import re
+import shutil
 from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,6 +19,31 @@ if TYPE_CHECKING:
 from ..domain import Book, BookMetadata, Chapter, ChapterMetadata
 from ..repositories.interfaces import IConfigRepository, IFileRepository
 from .interfaces import IStructureService
+
+
+class EditResult:
+    """Result of an editing operation with optional diff preview."""
+
+    def __init__(
+        self,
+        success: bool,
+        message: str,
+        backup_path: Path | None = None,
+        diff: str | None = None,
+    ):
+        self.success = success
+        self.message = message
+        self.backup_path = backup_path
+        self.diff = diff
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        result = {"success": self.success, "message": self.message}
+        if self.backup_path:
+            result["backup_path"] = str(self.backup_path)
+        if self.diff:
+            result["diff"] = self.diff
+        return result
 
 
 def _slugify(text: str) -> str:
@@ -536,3 +563,456 @@ class WriterService:
             "timestamp": timestamp_str,
             "text": note_text,
         }
+
+    def _create_backup(self, file_path: Path) -> Path:
+        """Create a backup of a file before editing.
+
+        Args:
+            file_path: Path to the file to backup.
+
+        Returns:
+            Path to the backup file.
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = file_path.with_suffix(f".{timestamp}.bak")
+        shutil.copy2(file_path, backup_path)
+        return backup_path
+
+    def _generate_diff(
+        self, original: str, modified: str, file_name: str = "chapter.md"
+    ) -> str:
+        """Generate a unified diff between original and modified content.
+
+        Args:
+            original: Original content.
+            modified: Modified content.
+            file_name: Name to show in diff header.
+
+        Returns:
+            Unified diff as string.
+        """
+        original_lines = original.splitlines(keepends=True)
+        modified_lines = modified.splitlines(keepends=True)
+
+        diff = difflib.unified_diff(
+            original_lines,
+            modified_lines,
+            fromfile=f"a/{file_name}",
+            tofile=f"b/{file_name}",
+        )
+        return "".join(diff)
+
+    def _validate_markdown(self, content: str) -> list[str]:
+        """Basic markdown validation.
+
+        Checks for common markdown issues.
+
+        Args:
+            content: Markdown content to validate.
+
+        Returns:
+            List of warning messages (empty if valid).
+        """
+        warnings = []
+
+        # Check for unclosed code blocks
+        code_block_count = content.count("```")
+        if code_block_count % 2 != 0:
+            warnings.append("Unclosed code block (odd number of ``` markers)")
+
+        # Check for unclosed links
+        open_brackets = content.count("[")
+        close_brackets = content.count("]")
+        if open_brackets != close_brackets:
+            warnings.append(
+                f"Mismatched brackets: {open_brackets} '[' vs {close_brackets} ']'"
+            )
+
+        return warnings
+
+    def update_chapter_content(
+        self,
+        book_path: Path,
+        chapter_index: int,
+        new_content: str,
+        reader_service: "ReaderService",
+        dry_run: bool = False,
+        create_backup: bool = True,
+    ) -> EditResult:
+        """Replace full chapter content.
+
+        Preserves frontmatter if present and replaces the body content.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+            new_content: The new content for the chapter body.
+            reader_service: ReaderService for loading book.
+            dry_run: If True, return diff without writing.
+            create_backup: If True, create .bak file before editing.
+
+        Returns:
+            EditResult with success status, message, and optional diff.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter is not found.
+        """
+        book = reader_service.load_book(book_path)
+        chapter = book.get_chapter(chapter_index)
+
+        if chapter is None:
+            raise KeyError(f"Chapter {chapter_index} not found in book")
+
+        original_content = self._file_repo.read_file(chapter.file_path)
+
+        # Extract frontmatter if present
+        frontmatter = ""
+        if original_content.startswith("---"):
+            match = re.search(r"\n---\s*\n", original_content[3:])
+            if match:
+                frontmatter = original_content[: 3 + match.end()]
+
+        # Build new content with frontmatter preserved
+        modified_content = frontmatter + new_content.lstrip("\n")
+        if not modified_content.endswith("\n"):
+            modified_content += "\n"
+
+        # Validate markdown
+        warnings = self._validate_markdown(modified_content)
+        if warnings:
+            return EditResult(
+                success=False,
+                message=f"Markdown validation warnings: {'; '.join(warnings)}",
+            )
+
+        # Generate diff
+        diff = self._generate_diff(
+            original_content, modified_content, chapter.file_path.name
+        )
+
+        if dry_run:
+            return EditResult(
+                success=True,
+                message="Dry run - no changes written",
+                diff=diff,
+            )
+
+        # Create backup if requested
+        backup_path = None
+        if create_backup:
+            backup_path = self._create_backup(chapter.file_path)
+
+        # Write the new content
+        self._file_repo.write_file(chapter.file_path, modified_content)
+
+        return EditResult(
+            success=True,
+            message=f"Updated chapter {chapter_index}: {chapter.title}",
+            backup_path=backup_path,
+            diff=diff,
+        )
+
+    def append_to_chapter(
+        self,
+        book_path: Path,
+        chapter_index: int,
+        content: str,
+        reader_service: "ReaderService",
+        dry_run: bool = False,
+        create_backup: bool = True,
+    ) -> EditResult:
+        """Append content at the end of a chapter.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+            content: The content to append.
+            reader_service: ReaderService for loading book.
+            dry_run: If True, return diff without writing.
+            create_backup: If True, create .bak file before editing.
+
+        Returns:
+            EditResult with success status, message, and optional diff.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter is not found.
+        """
+        book = reader_service.load_book(book_path)
+        chapter = book.get_chapter(chapter_index)
+
+        if chapter is None:
+            raise KeyError(f"Chapter {chapter_index} not found in book")
+
+        original_content = self._file_repo.read_file(chapter.file_path)
+
+        # Ensure proper spacing before appended content
+        if original_content.rstrip().endswith("\n"):
+            separator = "\n"
+        else:
+            separator = "\n\n"
+
+        modified_content = original_content.rstrip() + separator + content.strip()
+        if not modified_content.endswith("\n"):
+            modified_content += "\n"
+
+        # Validate markdown
+        warnings = self._validate_markdown(modified_content)
+        if warnings:
+            return EditResult(
+                success=False,
+                message=f"Markdown validation warnings: {'; '.join(warnings)}",
+            )
+
+        # Generate diff
+        diff = self._generate_diff(
+            original_content, modified_content, chapter.file_path.name
+        )
+
+        if dry_run:
+            return EditResult(
+                success=True,
+                message="Dry run - no changes written",
+                diff=diff,
+            )
+
+        # Create backup if requested
+        backup_path = None
+        if create_backup:
+            backup_path = self._create_backup(chapter.file_path)
+
+        # Write the new content
+        self._file_repo.write_file(chapter.file_path, modified_content)
+
+        return EditResult(
+            success=True,
+            message=f"Appended content to chapter {chapter_index}: {chapter.title}",
+            backup_path=backup_path,
+            diff=diff,
+        )
+
+    def insert_at_section(
+        self,
+        book_path: Path,
+        chapter_index: int,
+        section_id: str | int,
+        content: str,
+        reader_service: "ReaderService",
+        position: str = "after",
+        dry_run: bool = False,
+        create_backup: bool = True,
+    ) -> EditResult:
+        """Insert content before or after a section.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            content: The content to insert.
+            reader_service: ReaderService for parsing sections.
+            position: "before" or "after" the section (default: after).
+            dry_run: If True, return diff without writing.
+            create_backup: If True, create .bak file before editing.
+
+        Returns:
+            EditResult with success status, message, and optional diff.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        book = reader_service.load_book(book_path)
+        chapter = book.get_chapter(chapter_index)
+
+        if chapter is None:
+            raise KeyError(f"Chapter {chapter_index} not found in book")
+
+        # Read and parse the chapter content
+        full_content = self._file_repo.read_file(chapter.file_path)
+        content_without_frontmatter = reader_service._strip_frontmatter(full_content)
+        sections = reader_service.parse_sections(content_without_frontmatter)
+
+        # Find the section
+        section = reader_service.get_section(sections, section_id)
+        if section is None:
+            raise KeyError(
+                f"Section '{section_id}' not found in chapter {chapter_index}"
+            )
+
+        # Extract frontmatter
+        frontmatter = ""
+        if full_content.startswith("---"):
+            match = re.search(r"\n---\s*\n", full_content[3:])
+            if match:
+                frontmatter = full_content[: 3 + match.end()]
+
+        # Rebuild content with inserted section
+        new_sections_content = []
+        for s in sections:
+            if s.index == section.index and position == "before":
+                new_sections_content.append(content.strip())
+            new_sections_content.append(s.content)
+            if s.index == section.index and position == "after":
+                new_sections_content.append(content.strip())
+
+        # Join sections with proper spacing
+        result_parts = []
+        for i, sec_content in enumerate(new_sections_content):
+            if i > 0:
+                result_parts.append("\n\n")
+            result_parts.append(sec_content)
+
+        modified_content = frontmatter + "".join(result_parts)
+        if not modified_content.endswith("\n"):
+            modified_content += "\n"
+
+        # Validate markdown
+        warnings = self._validate_markdown(modified_content)
+        if warnings:
+            return EditResult(
+                success=False,
+                message=f"Markdown validation warnings: {'; '.join(warnings)}",
+            )
+
+        # Generate diff
+        diff = self._generate_diff(
+            full_content, modified_content, chapter.file_path.name
+        )
+
+        if dry_run:
+            return EditResult(
+                success=True,
+                message="Dry run - no changes written",
+                diff=diff,
+            )
+
+        # Create backup if requested
+        backup_path = None
+        if create_backup:
+            backup_path = self._create_backup(chapter.file_path)
+
+        # Write the new content
+        self._file_repo.write_file(chapter.file_path, modified_content)
+
+        return EditResult(
+            success=True,
+            message=f"Inserted content {position} section '{section.heading}' in chapter {chapter_index}",
+            backup_path=backup_path,
+            diff=diff,
+        )
+
+    def replace_section(
+        self,
+        book_path: Path,
+        chapter_index: int,
+        section_id: str | int,
+        new_content: str,
+        reader_service: "ReaderService",
+        preserve_heading: bool = True,
+        dry_run: bool = False,
+        create_backup: bool = True,
+    ) -> EditResult:
+        """Replace section content with new content.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            new_content: The new content for the section.
+            reader_service: ReaderService for parsing sections.
+            preserve_heading: If True, keep the original heading (default: True).
+            dry_run: If True, return diff without writing.
+            create_backup: If True, create .bak file before editing.
+
+        Returns:
+            EditResult with success status, message, and optional diff.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        book = reader_service.load_book(book_path)
+        chapter = book.get_chapter(chapter_index)
+
+        if chapter is None:
+            raise KeyError(f"Chapter {chapter_index} not found in book")
+
+        # Read and parse the chapter content
+        full_content = self._file_repo.read_file(chapter.file_path)
+        content_without_frontmatter = reader_service._strip_frontmatter(full_content)
+        sections = reader_service.parse_sections(content_without_frontmatter)
+
+        # Find the section
+        section = reader_service.get_section(sections, section_id)
+        if section is None:
+            raise KeyError(
+                f"Section '{section_id}' not found in chapter {chapter_index}"
+            )
+
+        # Build the updated section content
+        if preserve_heading and section.heading:
+            updated_section = f"## {section.heading}\n\n{new_content.strip()}"
+        else:
+            updated_section = new_content.strip()
+
+        # Extract frontmatter
+        frontmatter = ""
+        if full_content.startswith("---"):
+            match = re.search(r"\n---\s*\n", full_content[3:])
+            if match:
+                frontmatter = full_content[: 3 + match.end()]
+
+        # Rebuild content with replaced section
+        new_sections_content = []
+        for s in sections:
+            if s.index == section.index:
+                new_sections_content.append(updated_section)
+            else:
+                new_sections_content.append(s.content)
+
+        # Join sections with proper spacing
+        result_parts = []
+        for i, content in enumerate(new_sections_content):
+            if i > 0 and sections[i].heading:
+                result_parts.append("\n")
+            result_parts.append(content)
+
+        modified_content = frontmatter + "\n".join(result_parts)
+        if not modified_content.endswith("\n"):
+            modified_content += "\n"
+
+        # Validate markdown
+        warnings = self._validate_markdown(modified_content)
+        if warnings:
+            return EditResult(
+                success=False,
+                message=f"Markdown validation warnings: {'; '.join(warnings)}",
+            )
+
+        # Generate diff
+        diff = self._generate_diff(
+            full_content, modified_content, chapter.file_path.name
+        )
+
+        if dry_run:
+            return EditResult(
+                success=True,
+                message="Dry run - no changes written",
+                diff=diff,
+            )
+
+        # Create backup if requested
+        backup_path = None
+        if create_backup:
+            backup_path = self._create_backup(chapter.file_path)
+
+        # Write the new content
+        self._file_repo.write_file(chapter.file_path, modified_content)
+
+        return EditResult(
+            success=True,
+            message=f"Replaced section '{section.heading}' in chapter {chapter_index}",
+            backup_path=backup_path,
+            diff=diff,
+        )

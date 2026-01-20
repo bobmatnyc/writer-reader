@@ -373,6 +373,252 @@ async def list_tools() -> list[Tool]:
                 "required": ["path", "chapter"],
             },
         ),
+        Tool(
+            name="update_chapter",
+            description="Replace full chapter content (preserves frontmatter). Creates backup by default.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "New content for the chapter body",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "If true, return diff without making changes (default: false)",
+                        "default": False,
+                    },
+                    "create_backup": {
+                        "type": "boolean",
+                        "description": "Create .bak backup file before editing (default: true)",
+                        "default": True,
+                    },
+                },
+                "required": ["path", "chapter", "content"],
+            },
+        ),
+        Tool(
+            name="append_content",
+            description="Append content to the end of a chapter. Creates backup by default.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to append at the end of the chapter",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "If true, return diff without making changes (default: false)",
+                        "default": False,
+                    },
+                    "create_backup": {
+                        "type": "boolean",
+                        "description": "Create .bak backup file before editing (default: true)",
+                        "default": True,
+                    },
+                },
+                "required": ["path", "chapter", "content"],
+            },
+        ),
+        Tool(
+            name="insert_section",
+            description="Insert content before or after a section. Creates backup by default.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "section": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "integer"},
+                        ],
+                        "description": "Section identifier: heading text (partial match) or 0-based index",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to insert (typically a new section with ## heading)",
+                    },
+                    "position": {
+                        "type": "string",
+                        "enum": ["before", "after"],
+                        "description": "Insert before or after the section (default: after)",
+                        "default": "after",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "If true, return diff without making changes (default: false)",
+                        "default": False,
+                    },
+                    "create_backup": {
+                        "type": "boolean",
+                        "description": "Create .bak backup file before editing (default: true)",
+                        "default": True,
+                    },
+                },
+                "required": ["path", "chapter", "section", "content"],
+            },
+        ),
+        Tool(
+            name="replace_section",
+            description="Replace section content with new content (optionally preserves heading). Creates backup by default.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "section": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "integer"},
+                        ],
+                        "description": "Section identifier: heading text (partial match) or 0-based index",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "New content for the section",
+                    },
+                    "preserve_heading": {
+                        "type": "boolean",
+                        "description": "Keep the original section heading (default: true)",
+                        "default": True,
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "If true, return diff without making changes (default: false)",
+                        "default": False,
+                    },
+                    "create_backup": {
+                        "type": "boolean",
+                        "description": "Create .bak backup file before editing (default: true)",
+                        "default": True,
+                    },
+                },
+                "required": ["path", "chapter", "section", "content"],
+            },
+        ),
+        Tool(
+            name="get_chapter_history",
+            description="Get git commit history for a chapter file. Shows commits that modified the chapter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of commits to return (default: 50)",
+                        "default": 50,
+                    },
+                },
+                "required": ["path", "chapter"],
+            },
+        ),
+        Tool(
+            name="get_chapter_diff",
+            description="Get diff between two versions of a chapter. Shows additions, deletions, and change hunks.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "commit_from": {
+                        "type": "string",
+                        "description": "Starting commit (older version). Default: HEAD~1",
+                        "default": "HEAD~1",
+                    },
+                    "commit_to": {
+                        "type": "string",
+                        "description": "Ending commit (newer version). Default: HEAD",
+                        "default": "HEAD",
+                    },
+                },
+                "required": ["path", "chapter"],
+            },
+        ),
+        Tool(
+            name="get_chapter_at_commit",
+            description="Get the content of a chapter at a specific git commit.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "commit": {
+                        "type": "string",
+                        "description": "Commit reference (hash, branch, tag, HEAD~N). Default: HEAD",
+                        "default": "HEAD",
+                    },
+                },
+                "required": ["path", "chapter"],
+            },
+        ),
+        Tool(
+            name="get_recent_changes",
+            description="Get recent changes across the entire book. Shows commits that modified .md files.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of changes to return (default: 20)",
+                        "default": 20,
+                    },
+                },
+                "required": ["path"],
+            },
+        ),
     ]
 
 
@@ -426,6 +672,22 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             result = await handle_extract_images(arguments)
         elif name == "extract_mermaid":
             result = await handle_extract_mermaid(arguments)
+        elif name == "update_chapter":
+            result = await handle_update_chapter(arguments)
+        elif name == "append_content":
+            result = await handle_append_content(arguments)
+        elif name == "insert_section":
+            result = await handle_insert_section(arguments)
+        elif name == "replace_section":
+            result = await handle_replace_section(arguments)
+        elif name == "get_chapter_history":
+            result = await handle_get_chapter_history(book_service, arguments)
+        elif name == "get_chapter_diff":
+            result = await handle_get_chapter_diff(book_service, arguments)
+        elif name == "get_chapter_at_commit":
+            result = await handle_get_chapter_at_commit(book_service, arguments)
+        elif name == "get_recent_changes":
+            result = await handle_get_recent_changes(arguments)
         else:
             result = {"error": f"Unknown tool: {name}"}
     except FileNotFoundError as e:
@@ -983,6 +1245,348 @@ async def handle_extract_mermaid(arguments: dict[str, Any]) -> dict[str, Any]:
                 "end_line": block.end_line,
             }
             for block in blocks
+        ],
+    }
+
+
+async def handle_update_chapter(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle update_chapter tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path', 'chapter', 'content',
+                  optional 'dry_run' and 'create_backup'.
+
+    Returns:
+        Dictionary with update status.
+    """
+    from ..services import IReaderService, IWriterService
+
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+    content = arguments["content"]
+    dry_run = arguments.get("dry_run", False)
+    create_backup = arguments.get("create_backup", True)
+
+    container = configure_services()
+    writer_service = container.resolve(IWriterService)
+    reader_service = container.resolve(IReaderService)
+
+    result = writer_service.update_chapter_content(
+        path,
+        chapter,
+        content,
+        reader_service,
+        dry_run=dry_run,
+        create_backup=create_backup,
+    )
+
+    return result.to_dict()
+
+
+async def handle_append_content(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle append_content tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path', 'chapter', 'content',
+                  optional 'dry_run' and 'create_backup'.
+
+    Returns:
+        Dictionary with append status.
+    """
+    from ..services import IReaderService, IWriterService
+
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+    content = arguments["content"]
+    dry_run = arguments.get("dry_run", False)
+    create_backup = arguments.get("create_backup", True)
+
+    container = configure_services()
+    writer_service = container.resolve(IWriterService)
+    reader_service = container.resolve(IReaderService)
+
+    result = writer_service.append_to_chapter(
+        path,
+        chapter,
+        content,
+        reader_service,
+        dry_run=dry_run,
+        create_backup=create_backup,
+    )
+
+    return result.to_dict()
+
+
+async def handle_insert_section(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle insert_section tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path', 'chapter', 'section',
+                  'content', optional 'position', 'dry_run', 'create_backup'.
+
+    Returns:
+        Dictionary with insert status.
+    """
+    from ..services import IReaderService, IWriterService
+
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+    section_id = arguments["section"]
+    content = arguments["content"]
+    position = arguments.get("position", "after")
+    dry_run = arguments.get("dry_run", False)
+    create_backup = arguments.get("create_backup", True)
+
+    container = configure_services()
+    writer_service = container.resolve(IWriterService)
+    reader_service = container.resolve(IReaderService)
+
+    result = writer_service.insert_at_section(
+        path,
+        chapter,
+        section_id,
+        content,
+        reader_service,
+        position=position,
+        dry_run=dry_run,
+        create_backup=create_backup,
+    )
+
+    return result.to_dict()
+
+
+async def handle_replace_section(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle replace_section tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path', 'chapter', 'section',
+                  'content', optional 'preserve_heading', 'dry_run', 'create_backup'.
+
+    Returns:
+        Dictionary with replace status.
+    """
+    from ..services import IReaderService, IWriterService
+
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+    section_id = arguments["section"]
+    content = arguments["content"]
+    preserve_heading = arguments.get("preserve_heading", True)
+    dry_run = arguments.get("dry_run", False)
+    create_backup = arguments.get("create_backup", True)
+
+    container = configure_services()
+    writer_service = container.resolve(IWriterService)
+    reader_service = container.resolve(IReaderService)
+
+    result = writer_service.replace_section(
+        path,
+        chapter,
+        section_id,
+        content,
+        reader_service,
+        preserve_heading=preserve_heading,
+        dry_run=dry_run,
+        create_backup=create_backup,
+    )
+
+    return result.to_dict()
+
+
+async def handle_get_chapter_history(
+    book_service: IBookService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle get_chapter_history tool call.
+
+    Args:
+        book_service: The book service instance.
+        arguments: Tool arguments containing 'path', 'chapter', optional 'limit'.
+
+    Returns:
+        Dictionary with commit history.
+    """
+    from ..services import GitService
+
+    path = Path(arguments["path"]).resolve()
+    chapter_num = arguments["chapter"]
+    limit = arguments.get("limit", 50)
+
+    container = configure_services()
+    git_service = container.resolve(GitService)
+
+    # Check if this is a git repo
+    if not git_service.is_git_repo(path):
+        return {"error": f"Not a git repository: {path}"}
+
+    book = book_service.get_book_info(path)
+    chapter = book.get_chapter(chapter_num)
+
+    if chapter is None:
+        return {"error": f"Chapter {chapter_num} not found"}
+
+    history = git_service.get_chapter_history(chapter.file_path, limit)
+
+    return {
+        "chapter": chapter_num,
+        "chapter_title": chapter.title,
+        "file_path": str(chapter.file_path),
+        "commit_count": history.commit_count,
+        "commits": [
+            {
+                "hash": commit.hash,
+                "short_hash": commit.short_hash,
+                "author": commit.author,
+                "author_email": commit.author_email,
+                "date": commit.date.isoformat(),
+                "subject": commit.subject,
+                "message": commit.message,
+            }
+            for commit in history.commits
+        ],
+    }
+
+
+async def handle_get_chapter_diff(
+    book_service: IBookService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle get_chapter_diff tool call.
+
+    Args:
+        book_service: The book service instance.
+        arguments: Tool arguments containing 'path', 'chapter',
+                  optional 'commit_from' and 'commit_to'.
+
+    Returns:
+        Dictionary with diff information.
+    """
+    from ..services import GitService
+
+    path = Path(arguments["path"]).resolve()
+    chapter_num = arguments["chapter"]
+    commit_from = arguments.get("commit_from", "HEAD~1")
+    commit_to = arguments.get("commit_to", "HEAD")
+
+    container = configure_services()
+    git_service = container.resolve(GitService)
+
+    # Check if this is a git repo
+    if not git_service.is_git_repo(path):
+        return {"error": f"Not a git repository: {path}"}
+
+    book = book_service.get_book_info(path)
+    chapter = book.get_chapter(chapter_num)
+
+    if chapter is None:
+        return {"error": f"Chapter {chapter_num} not found"}
+
+    diff_data = git_service.get_chapter_diff(chapter.file_path, commit_from, commit_to)
+
+    return {
+        "chapter": chapter_num,
+        "chapter_title": chapter.title,
+        "file_path": str(chapter.file_path),
+        "commit_from": diff_data.commit_from,
+        "commit_to": diff_data.commit_to,
+        "has_changes": diff_data.has_changes,
+        "additions": diff_data.additions,
+        "deletions": diff_data.deletions,
+        "hunks": [
+            {
+                "old_start": hunk.old_start,
+                "old_count": hunk.old_count,
+                "new_start": hunk.new_start,
+                "new_count": hunk.new_count,
+                "content": hunk.content,
+            }
+            for hunk in diff_data.hunks
+        ],
+        "raw_diff": diff_data.raw_diff,
+    }
+
+
+async def handle_get_chapter_at_commit(
+    book_service: IBookService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle get_chapter_at_commit tool call.
+
+    Args:
+        book_service: The book service instance.
+        arguments: Tool arguments containing 'path', 'chapter', optional 'commit'.
+
+    Returns:
+        Dictionary with chapter content at that commit.
+    """
+    from ..services import GitService
+
+    path = Path(arguments["path"]).resolve()
+    chapter_num = arguments["chapter"]
+    commit = arguments.get("commit", "HEAD")
+
+    container = configure_services()
+    git_service = container.resolve(GitService)
+
+    # Check if this is a git repo
+    if not git_service.is_git_repo(path):
+        return {"error": f"Not a git repository: {path}"}
+
+    book = book_service.get_book_info(path)
+    chapter = book.get_chapter(chapter_num)
+
+    if chapter is None:
+        return {"error": f"Chapter {chapter_num} not found"}
+
+    content = git_service.get_chapter_at_commit(chapter.file_path, commit)
+
+    return {
+        "chapter": chapter_num,
+        "chapter_title": chapter.title,
+        "commit": commit,
+        "content": content,
+    }
+
+
+async def handle_get_recent_changes(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle get_recent_changes tool call.
+
+    Args:
+        arguments: Tool arguments containing 'path' and optional 'limit'.
+
+    Returns:
+        Dictionary with recent changes.
+    """
+    from ..services import GitService
+
+    path = Path(arguments["path"]).resolve()
+    limit = arguments.get("limit", 20)
+
+    container = configure_services()
+    git_service = container.resolve(GitService)
+
+    # Check if this is a git repo
+    if not git_service.is_git_repo(path):
+        return {"error": f"Not a git repository: {path}"}
+
+    changes = git_service.get_recent_changes(path, limit)
+
+    return {
+        "path": str(path),
+        "change_count": len(changes),
+        "changes": [
+            {
+                "file_path": change.file_path,
+                "change_type": change.change_type,
+                "commit": {
+                    "hash": change.commit.hash,
+                    "short_hash": change.commit.short_hash,
+                    "author": change.commit.author,
+                    "date": change.commit.date.isoformat(),
+                    "subject": change.commit.subject,
+                },
+            }
+            for change in changes
         ],
     }
 
