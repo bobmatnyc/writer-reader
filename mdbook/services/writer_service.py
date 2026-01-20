@@ -4,9 +4,15 @@ Provides functionality to initialize books, add chapters, and update
 the table of contents using constructor injection for dependencies.
 """
 
+from __future__ import annotations
+
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .reader_service import ReaderService
 
 from ..domain import Book, BookMetadata, Chapter, ChapterMetadata
 from ..repositories.interfaces import IConfigRepository, IFileRepository
@@ -349,3 +355,184 @@ class WriterService:
             pass
 
         return max_num + 1
+
+    def update_section(
+        self,
+        book_path: Path,
+        chapter_index: int,
+        section_id: str | int,
+        new_content: str,
+        reader_service: "ReaderService",
+    ) -> dict:
+        """Replace section content while preserving heading.
+
+        Updates the content of a specific section within a chapter.
+        The heading line is preserved; only the body content changes.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            new_content: The new content for the section body.
+            reader_service: ReaderService for parsing sections.
+
+        Returns:
+            Dictionary with success status and section info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        book = reader_service.load_book(book_path)
+        chapter = book.get_chapter(chapter_index)
+
+        if chapter is None:
+            raise KeyError(f"Chapter {chapter_index} not found in book")
+
+        # Read and parse the chapter content
+        full_content = self._file_repo.read_file(chapter.file_path)
+        content_without_frontmatter = reader_service._strip_frontmatter(full_content)
+        sections = reader_service.parse_sections(content_without_frontmatter)
+
+        # Find the section
+        section = reader_service.get_section(sections, section_id)
+        if section is None:
+            raise KeyError(
+                f"Section '{section_id}' not found in chapter {chapter_index}"
+            )
+
+        # Build the updated section content
+        if section.heading:
+            updated_section = f"## {section.heading}\n\n{new_content.strip()}"
+        else:
+            # Section without heading (content before first ##)
+            updated_section = new_content.strip()
+
+        # Reconstruct the chapter content
+        # Split by frontmatter boundary
+        frontmatter = ""
+        if full_content.startswith("---"):
+            match = re.search(r"\n---\s*\n", full_content[3:])
+            if match:
+                frontmatter = full_content[: 3 + match.end()]
+
+        # Rebuild content with updated section
+        new_sections_content = []
+        for s in sections:
+            if s.index == section.index:
+                new_sections_content.append(updated_section)
+            else:
+                new_sections_content.append(s.content)
+
+        # Join sections - add blank line between sections with headings
+        result_parts = []
+        for i, content in enumerate(new_sections_content):
+            if i > 0 and sections[i].heading:
+                result_parts.append("\n")
+            result_parts.append(content)
+
+        new_chapter_content = frontmatter + "\n".join(result_parts)
+
+        # Write back to file
+        self._file_repo.write_file(chapter.file_path, new_chapter_content)
+
+        # Re-parse to get updated line numbers
+        updated_content = reader_service._strip_frontmatter(new_chapter_content)
+        updated_sections = reader_service.parse_sections(updated_content)
+        updated_section_obj = reader_service.get_section(
+            updated_sections, section.index
+        )
+
+        return {
+            "success": True,
+            "heading": section.heading,
+            "start_line": updated_section_obj.start_line if updated_section_obj else 0,
+            "end_line": updated_section_obj.end_line if updated_section_obj else 0,
+        }
+
+    def add_note(
+        self,
+        book_path: Path,
+        chapter_index: int,
+        section_id: str | int,
+        note_text: str,
+        reader_service: "ReaderService",
+    ) -> dict:
+        """Add a timestamped note to a section.
+
+        Notes are stored as HTML comments at the end of the section.
+        Format: <!-- NOTE: 2024-01-19T15:30:00 - Note text here -->
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            note_text: The text of the note to add.
+            reader_service: ReaderService for parsing sections.
+
+        Returns:
+            Dictionary with success status and note info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        book = reader_service.load_book(book_path)
+        chapter = book.get_chapter(chapter_index)
+
+        if chapter is None:
+            raise KeyError(f"Chapter {chapter_index} not found in book")
+
+        # Read and parse the chapter content
+        full_content = self._file_repo.read_file(chapter.file_path)
+        content_without_frontmatter = reader_service._strip_frontmatter(full_content)
+        sections = reader_service.parse_sections(content_without_frontmatter)
+
+        # Find the section
+        section = reader_service.get_section(sections, section_id)
+        if section is None:
+            raise KeyError(
+                f"Section '{section_id}' not found in chapter {chapter_index}"
+            )
+
+        # Create timestamped note
+        timestamp = datetime.now()
+        timestamp_str = timestamp.strftime("%Y-%m-%dT%H:%M:%S")
+        note_comment = f"<!-- NOTE: {timestamp_str} - {note_text} -->"
+
+        # Add note at the end of the section content
+        section_content = section.content.rstrip()
+        updated_section = f"{section_content}\n\n{note_comment}"
+
+        # Extract frontmatter
+        frontmatter = ""
+        if full_content.startswith("---"):
+            match = re.search(r"\n---\s*\n", full_content[3:])
+            if match:
+                frontmatter = full_content[: 3 + match.end()]
+
+        # Rebuild content with updated section
+        new_sections_content = []
+        for s in sections:
+            if s.index == section.index:
+                new_sections_content.append(updated_section)
+            else:
+                new_sections_content.append(s.content)
+
+        # Join sections
+        result_parts = []
+        for i, content in enumerate(new_sections_content):
+            if i > 0 and sections[i].heading:
+                result_parts.append("\n")
+            result_parts.append(content)
+
+        new_chapter_content = frontmatter + "\n".join(result_parts)
+
+        # Write back to file
+        self._file_repo.write_file(chapter.file_path, new_chapter_content)
+
+        return {
+            "success": True,
+            "timestamp": timestamp_str,
+            "text": note_text,
+        }

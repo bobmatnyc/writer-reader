@@ -153,6 +153,125 @@ async def list_tools() -> list[Tool]:
                 "required": ["path"],
             },
         ),
+        Tool(
+            name="list_sections",
+            description="List all sections (## headings) in a chapter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                },
+                "required": ["path", "chapter"],
+            },
+        ),
+        Tool(
+            name="read_section",
+            description="Get section content by heading or index.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "section": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "integer"},
+                        ],
+                        "description": "Section identifier: heading text (partial match) or 0-based index",
+                    },
+                },
+                "required": ["path", "chapter", "section"],
+            },
+        ),
+        Tool(
+            name="update_section",
+            description="Replace section content (preserves heading).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "section": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "integer"},
+                        ],
+                        "description": "Section identifier: heading text (partial match) or 0-based index",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "New content for the section body (heading is preserved)",
+                    },
+                },
+                "required": ["path", "chapter", "section", "content"],
+            },
+        ),
+        Tool(
+            name="add_note",
+            description="Add timestamped HTML comment note to section.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                    "section": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "integer"},
+                        ],
+                        "description": "Section identifier: heading text (partial match) or 0-based index",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "The note text to add",
+                    },
+                },
+                "required": ["path", "chapter", "section", "note"],
+            },
+        ),
+        Tool(
+            name="list_notes",
+            description="List all notes in a chapter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the book directory",
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "Chapter number (0 for intro, 1+ for numbered chapters)",
+                    },
+                },
+                "required": ["path", "chapter"],
+            },
+        ),
     ]
 
 
@@ -184,6 +303,16 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             result = await handle_add_chapter(book_service, arguments)
         elif name == "update_toc":
             result = await handle_update_toc(book_service, arguments)
+        elif name == "list_sections":
+            result = await handle_list_sections(book_service, arguments)
+        elif name == "read_section":
+            result = await handle_read_section(book_service, arguments)
+        elif name == "update_section":
+            result = await handle_update_section(book_service, arguments)
+        elif name == "add_note":
+            result = await handle_add_note(book_service, arguments)
+        elif name == "list_notes":
+            result = await handle_list_notes(book_service, arguments)
         else:
             result = {"error": f"Unknown tool: {name}"}
     except FileNotFoundError as e:
@@ -390,6 +519,139 @@ async def handle_update_toc(
         "chapter_count": len(book.chapters),
         "preserve_structure": preserve_structure,
     }
+
+
+async def handle_list_sections(
+    book_service: IBookService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle list_sections tool call.
+
+    Args:
+        book_service: The book service instance.
+        arguments: Tool arguments containing 'path' and 'chapter'.
+
+    Returns:
+        Dictionary with sections list.
+    """
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+
+    sections = book_service.list_sections(path, chapter)
+
+    return {
+        "sections": [
+            {
+                "index": s.index,
+                "heading": s.heading,
+                "slug": s.slug,
+                "start_line": s.start_line,
+                "end_line": s.end_line,
+                "note_count": len(s.notes),
+            }
+            for s in sections
+        ],
+    }
+
+
+async def handle_read_section(
+    book_service: IBookService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle read_section tool call.
+
+    Args:
+        book_service: The book service instance.
+        arguments: Tool arguments containing 'path', 'chapter', and 'section'.
+
+    Returns:
+        Dictionary with section content.
+    """
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+    section_id = arguments["section"]
+
+    section = book_service.read_section(path, chapter, section_id)
+
+    if section is None:
+        return {"error": f"Section '{section_id}' not found in chapter {chapter}"}
+
+    return {
+        "heading": section.heading,
+        "content": section.content,
+        "body": section.body,
+        "notes": [
+            {"timestamp": n.timestamp.isoformat(), "text": n.text}
+            for n in section.notes
+        ],
+    }
+
+
+async def handle_update_section(
+    book_service: IBookService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle update_section tool call.
+
+    Args:
+        book_service: The book service instance.
+        arguments: Tool arguments containing 'path', 'chapter', 'section', 'content'.
+
+    Returns:
+        Dictionary with update status.
+    """
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+    section_id = arguments["section"]
+    content = arguments["content"]
+
+    result = book_service.update_section(path, chapter, section_id, content)
+
+    return result
+
+
+async def handle_add_note(
+    book_service: IBookService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle add_note tool call.
+
+    Args:
+        book_service: The book service instance.
+        arguments: Tool arguments containing 'path', 'chapter', 'section', 'note'.
+
+    Returns:
+        Dictionary with note info.
+    """
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+    section_id = arguments["section"]
+    note_text = arguments["note"]
+
+    result = book_service.add_note(path, chapter, section_id, note_text)
+
+    return result
+
+
+async def handle_list_notes(
+    book_service: IBookService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Handle list_notes tool call.
+
+    Args:
+        book_service: The book service instance.
+        arguments: Tool arguments containing 'path' and 'chapter'.
+
+    Returns:
+        Dictionary with notes list.
+    """
+    path = Path(arguments["path"]).resolve()
+    chapter = arguments["chapter"]
+
+    notes = book_service.list_notes(path, chapter)
+
+    return {"notes": notes}
 
 
 async def run_server_async() -> None:

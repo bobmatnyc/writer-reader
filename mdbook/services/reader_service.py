@@ -5,9 +5,10 @@ constructor injection for dependencies.
 """
 
 import re
+from datetime import datetime
 from pathlib import Path
 
-from ..domain import Book, BookMetadata, Chapter, FormatType
+from ..domain import Book, BookMetadata, Chapter, FormatType, Note, Section
 from ..repositories.interfaces import IFileRepository, IConfigRepository
 from .interfaces import IStructureService
 
@@ -260,3 +261,140 @@ class ReaderService:
         name = name.replace("-", " ").replace("_", " ")
         # Title case
         return name.title()
+
+    def parse_sections(self, content: str) -> list[Section]:
+        """Parse markdown content into sections by ## headings.
+
+        Splits content on level-2 headings (##) and creates Section objects.
+        Content before the first ## heading becomes section 0 with empty heading.
+
+        Args:
+            content: The full markdown content of a chapter.
+
+        Returns:
+            A list of Section objects in document order.
+        """
+        lines = content.split("\n")
+        sections: list[Section] = []
+        current_lines: list[str] = []
+        current_heading = ""
+        current_start = 1
+        section_index = 0
+
+        for line_num, line in enumerate(lines, start=1):
+            # Check for ## heading (but not ### or more)
+            if line.startswith("## ") and not line.startswith("### "):
+                # Save previous section if we have content
+                if current_lines or section_index == 0:
+                    section_content = "\n".join(current_lines)
+                    notes = self._parse_notes(section_content)
+                    sections.append(
+                        Section(
+                            heading=current_heading,
+                            content=section_content,
+                            start_line=current_start,
+                            end_line=line_num,
+                            index=section_index,
+                            notes=notes,
+                        )
+                    )
+                    section_index += 1
+
+                # Start new section
+                current_heading = line[3:].strip()
+                current_start = line_num
+                current_lines = [line]
+            else:
+                current_lines.append(line)
+
+        # Don't forget the last section
+        if current_lines or section_index == 0:
+            section_content = "\n".join(current_lines)
+            notes = self._parse_notes(section_content)
+            sections.append(
+                Section(
+                    heading=current_heading,
+                    content=section_content,
+                    start_line=current_start,
+                    end_line=len(lines) + 1,
+                    index=section_index,
+                    notes=notes,
+                )
+            )
+
+        return sections
+
+    def _parse_notes(self, content: str) -> list[Note]:
+        """Parse notes from HTML comments in content.
+
+        Notes have the format: <!-- NOTE: 2024-01-19T15:30:00 - Note text here -->
+
+        Args:
+            content: The content to parse for notes.
+
+        Returns:
+            A list of Note objects found in the content.
+        """
+        notes: list[Note] = []
+        # Match <!-- NOTE: timestamp - text -->
+        pattern = (
+            r"<!--\s*NOTE:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\s*-\s*(.*?)\s*-->"
+        )
+        for match in re.finditer(pattern, content, re.DOTALL):
+            try:
+                timestamp = datetime.fromisoformat(match.group(1))
+                text = match.group(2).strip()
+                notes.append(Note(timestamp=timestamp, text=text))
+            except ValueError:
+                # Skip invalid timestamps
+                continue
+        return notes
+
+    def get_section(
+        self, sections: list[Section], identifier: str | int
+    ) -> Section | None:
+        """Get a section by heading or index.
+
+        Args:
+            sections: List of Section objects to search.
+            identifier: Either an integer index (0-based) or a string
+                for case-insensitive partial match on heading.
+
+        Returns:
+            The matching Section, or None if not found.
+        """
+        if isinstance(identifier, int):
+            if 0 <= identifier < len(sections):
+                return sections[identifier]
+            return None
+
+        # String identifier - case-insensitive partial match
+        identifier_lower = identifier.lower()
+        for section in sections:
+            if identifier_lower in section.heading.lower():
+                return section
+        return None
+
+    def list_sections(self, book_path: Path, chapter_index: int) -> list[Section]:
+        """List all sections in a specific chapter.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number (0 for intro, 1+ for chapters).
+
+        Returns:
+            A list of Section objects in the chapter.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If no chapter with that index exists.
+        """
+        book = self.load_book(book_path)
+        chapter = book.get_chapter(chapter_index)
+
+        if chapter is None:
+            raise KeyError(f"Chapter {chapter_index} not found in book")
+
+        content = self.get_chapter_content(chapter)
+        content = self._strip_frontmatter(content)
+        return self.parse_sections(content)

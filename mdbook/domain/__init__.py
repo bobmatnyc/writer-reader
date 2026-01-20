@@ -3,6 +3,7 @@
 from .chapter import Chapter, ChapterMetadata
 from .book import Book, BookMetadata
 from .structure import FormatType
+from .section import Section, Note
 
 __all__ = [
     "Chapter",
@@ -10,4 +11,6 @@ __all__ = [
     "Book",
     "BookMetadata",
     "FormatType",
+    "Section",
+    "Note",
 ]

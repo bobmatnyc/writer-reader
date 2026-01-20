@@ -6,7 +6,7 @@ delegating to reader and writer services.
 
 from pathlib import Path
 
-from ..domain import Book, Chapter
+from ..domain import Book, Chapter, Section
 from .interfaces import IReaderService, IWriterService
 
 
@@ -137,3 +137,119 @@ class BookService:
         """
         book = self._reader.load_book(root)
         self._writer.update_toc(book, preserve_structure)
+
+    def list_sections(self, root: Path, chapter_index: int) -> list[Section]:
+        """List all sections in a specific chapter.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+
+        Returns:
+            A list of Section objects in the chapter.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If no chapter with that index exists.
+        """
+        return self._reader.list_sections(root, chapter_index)
+
+    def read_section(
+        self, root: Path, chapter_index: int, section_id: str | int
+    ) -> Section | None:
+        """Get a section by heading or index.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+
+        Returns:
+            The matching Section, or None if not found.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If no chapter with that index exists.
+        """
+        sections = self._reader.list_sections(root, chapter_index)
+        return self._reader.get_section(sections, section_id)
+
+    def update_section(
+        self,
+        root: Path,
+        chapter_index: int,
+        section_id: str | int,
+        new_content: str,
+    ) -> dict:
+        """Replace section content while preserving heading.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            new_content: The new content for the section body.
+
+        Returns:
+            Dictionary with success status and section info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        return self._writer.update_section(
+            root, chapter_index, section_id, new_content, self._reader
+        )
+
+    def add_note(
+        self,
+        root: Path,
+        chapter_index: int,
+        section_id: str | int,
+        note_text: str,
+    ) -> dict:
+        """Add a timestamped note to a section.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            note_text: The text of the note to add.
+
+        Returns:
+            Dictionary with success status and note info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        return self._writer.add_note(
+            root, chapter_index, section_id, note_text, self._reader
+        )
+
+    def list_notes(self, root: Path, chapter_index: int) -> list[dict]:
+        """List all notes in a chapter.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+
+        Returns:
+            A list of note dictionaries with section info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If no chapter with that index exists.
+        """
+        sections = self._reader.list_sections(root, chapter_index)
+        notes = []
+        for section in sections:
+            for note in section.notes:
+                notes.append(
+                    {
+                        "section_heading": section.heading,
+                        "section_index": section.index,
+                        "timestamp": note.timestamp.isoformat(),
+                        "text": note.text,
+                    }
+                )
+        return notes

@@ -7,7 +7,7 @@ for structural subtyping (duck typing with type hints).
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from ..domain import Book, Chapter, ChapterMetadata, FormatType
+from ..domain import Book, Chapter, ChapterMetadata, FormatType, Section
 
 
 @runtime_checkable
@@ -128,6 +128,48 @@ class IReaderService(Protocol):
         """
         ...
 
+    def parse_sections(self, content: str) -> list[Section]:
+        """Parse markdown content into sections by ## headings.
+
+        Args:
+            content: The full markdown content of a chapter.
+
+        Returns:
+            A list of Section objects in document order.
+        """
+        ...
+
+    def get_section(
+        self, sections: list[Section], identifier: str | int
+    ) -> Section | None:
+        """Get a section by heading or index.
+
+        Args:
+            sections: List of Section objects to search.
+            identifier: Either an integer index (0-based) or a string
+                for case-insensitive partial match on heading.
+
+        Returns:
+            The matching Section, or None if not found.
+        """
+        ...
+
+    def list_sections(self, book_path: Path, chapter_index: int) -> list[Section]:
+        """List all sections in a specific chapter.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+
+        Returns:
+            A list of Section objects in the chapter.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If no chapter with that index exists.
+        """
+        ...
+
 
 @runtime_checkable
 class IWriterService(Protocol):
@@ -190,6 +232,58 @@ class IWriterService(Protocol):
 
         Raises:
             PermissionError: If unable to write the TOC file.
+        """
+        ...
+
+    def update_section(
+        self,
+        book_path: Path,
+        chapter_index: int,
+        section_id: str | int,
+        new_content: str,
+        reader_service: "IReaderService",
+    ) -> dict:
+        """Replace section content while preserving heading.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            new_content: The new content for the section body.
+            reader_service: ReaderService for parsing sections.
+
+        Returns:
+            Dictionary with success status and section info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        ...
+
+    def add_note(
+        self,
+        book_path: Path,
+        chapter_index: int,
+        section_id: str | int,
+        note_text: str,
+        reader_service: "IReaderService",
+    ) -> dict:
+        """Add a timestamped note to a section.
+
+        Args:
+            book_path: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            note_text: The text of the note to add.
+            reader_service: ReaderService for parsing sections.
+
+        Returns:
+            Dictionary with success status and note info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
         """
         ...
 
@@ -301,5 +395,104 @@ class IBookService(Protocol):
         Raises:
             FileNotFoundError: If no book exists at root.
             PermissionError: If unable to write the TOC.
+        """
+        ...
+
+    def list_sections(self, root: Path, chapter_index: int) -> list[Section]:
+        """List all sections in a specific chapter.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+
+        Returns:
+            A list of Section objects in the chapter.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If no chapter with that index exists.
+        """
+        ...
+
+    def read_section(
+        self, root: Path, chapter_index: int, section_id: str | int
+    ) -> Section | None:
+        """Get a section by heading or index.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+
+        Returns:
+            The matching Section, or None if not found.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If no chapter with that index exists.
+        """
+        ...
+
+    def update_section(
+        self,
+        root: Path,
+        chapter_index: int,
+        section_id: str | int,
+        new_content: str,
+    ) -> dict:
+        """Replace section content while preserving heading.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            new_content: The new content for the section body.
+
+        Returns:
+            Dictionary with success status and section info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        ...
+
+    def add_note(
+        self,
+        root: Path,
+        chapter_index: int,
+        section_id: str | int,
+        note_text: str,
+    ) -> dict:
+        """Add a timestamped note to a section.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+            section_id: Section identifier (index or heading match).
+            note_text: The text of the note to add.
+
+        Returns:
+            Dictionary with success status and note info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If the chapter or section is not found.
+        """
+        ...
+
+    def list_notes(self, root: Path, chapter_index: int) -> list[dict]:
+        """List all notes in a chapter.
+
+        Args:
+            root: Root directory of the book project.
+            chapter_index: The chapter number.
+
+        Returns:
+            A list of note dictionaries with section info.
+
+        Raises:
+            FileNotFoundError: If the book or chapter doesn't exist.
+            KeyError: If no chapter with that index exists.
         """
         ...
